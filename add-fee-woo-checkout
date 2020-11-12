@@ -1,0 +1,108 @@
+add_action( 'woocommerce_after_order_notes', 'custom_checkout_field_with_wholesale_option' );
+function custom_checkout_field_with_wholesale_option( $checkout ) {
+
+    if( current_user_can( 'editor' ) ) return;
+
+    echo '<style> #greeting_card_field.hidden { display:none; }</style>
+    <div id="gift_checkbox_wrap">';
+
+    woocommerce_form_field('gift_checkbox', array(
+        'type' => 'checkbox',
+        'class' => array('input-checkbox'),
+        'label' => __('<strong>Is this a Gift?</strong><br>Add a personalised greeting card for $2.50!'),
+        'placeholder' => __('card'),
+        'required' => false,
+        'value'  => true
+    ), '');
+
+    woocommerce_form_field('greeting_card', array(
+        'type' => 'textarea',
+		'maxlength' => '250',
+        'class' => array('hidden'),
+        'placeholder' => __('Enter greeting message!'),
+		
+        'required' => true,
+    ), '');
+
+    echo '</div>';
+
+    ?>
+    <script>
+    jQuery(function($){
+        $('#gift_checkbox_field input').click(function(){
+            if( $(this).is(':checked')) {
+                $('#greeting_card_field').css('display', 'none').removeClass('hidden').show();
+            } else if ( ! $(this).is(':checked') && $('#greeting_card_field').css('display') !== 'none' ) {
+                $('#greeting_card_field').hide();
+            }
+        });
+    });
+    </script>
+    <?php
+
+}
+
+// Validation
+add_action( 'woocommerce_checkout_process', 'wholesale_option_validation' );
+function wholesale_option_validation() {
+    if ( isset($_POST['gift_checkbox']) && isset($_POST['greeting_card']) && empty($_POST['greeting_card']) ) {
+        wc_add_notice( __("Please enter greeting message!"), "error" );
+    }
+}
+
+// Conditionally change customer user role and add customer card as order and user meta
+add_action( 'woocommerce_checkout_update_order_meta', 'wholesale_option_update_meta' );
+function wholesale_option_update_meta( $order_id ) {
+    if ( isset($_POST['gift_checkbox']) ) {
+        $user_id = get_post_meta( $order_id, '_customer_user', true ); // Get user ID
+        // Add customer card Id as order metadata
+        if ( isset($_POST['greeting_card']) ) {
+            update_post_meta( $order_id, 'greeting_card', sanitize_textarea_field( $_POST['greeting_card'] ) );
+
+            if( $user_id > 0 )
+                update_user_meta( $user_id, 'greeting_card', sanitize_textarea_field( $_POST['greeting_card'] ) );
+        }
+    }
+}
+
+// Display customer card on admin order edit page under billing address
+add_action( 'woocommerce_admin_order_data_after_billing_address', 'display_wholesale_option_admin_order', 10, 1 );
+function display_wholesale_option_admin_order( $order ){
+    echo '<p><strong>'.__('Greeting Message').':</strong> ' . $order->get_meta( 'greeting_card' ) . '</p>';
+}
+
+//add fee to checkout
+
+add_action( 'wp_footer', 'woocommerce_add_gift_box' );
+function woocommerce_add_gift_box() {
+    if (is_checkout()) {
+    ?>
+    <script type="text/javascript">
+    jQuery( document ).ready(function( $ ) {
+        $('#gift_checkbox').click(function(){
+            jQuery('body').trigger('update_checkout');
+        });
+    });
+    </script>
+    <?php
+    }
+}
+
+add_action( 'woocommerce_cart_calculate_fees', 'woo_add_cart_fee' );
+function woo_add_cart_fee( $cart ){
+        if ( ! $_POST || ( is_admin() && ! is_ajax() ) ) {
+        return;
+    }
+
+    if ( isset( $_POST['post_data'] ) ) {
+        parse_str( $_POST['post_data'], $post_data );
+    } else {
+        $post_data = $_POST; 
+    }
+
+    if (isset($post_data['gift_checkbox'])) {
+        $extracost = 2.5;
+        WC()->cart->add_fee( 'Greeting Card:', $extracost );
+    }
+
+}
